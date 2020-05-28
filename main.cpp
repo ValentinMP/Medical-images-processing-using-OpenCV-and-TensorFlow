@@ -7,6 +7,20 @@
 #include <opencv2/photo.hpp>
 #include <math.h>
 #include <dcmtk/dcmimgle/dcmimage.h>
+#include <sstream> //for image parsing
+#include <time.h> // for execution time measurment
+
+#ifndef SYSOUT_F
+#define SYSOUT_F(f, ...)      _RPT1( 0, f, __VA_ARGS__ ) // For Visual studio
+#endif
+
+#ifndef speedtest__             
+#define speedtest__(data)   for (long blockTime = NULL; (blockTime == NULL ? (blockTime = clock()) != NULL : false); SYSOUT_F(data "%.9fs", (double) (clock() - blockTime) / CLOCKS_PER_SEC))
+#endif
+// you need these includes for the function
+#include <windows.h> // for windows systems
+
+#include <algorithm>    // std::sort
 
 using namespace cv;
 using namespace std;
@@ -374,11 +388,47 @@ void imgSeg(Mat &input_image, Mat &output_image)
  
 }
 
+//image parsing from input folder
+
+/* Returns a list of files in a directory (except the ones that begin with a dot) */
+int readFilenames(std::vector<string> &filenames, const string &directory)
+{
+
+    HANDLE dir;
+    WIN32_FIND_DATA file_data;
+
+    if ((dir = FindFirstFile((directory + "\\*.png").c_str(), &file_data)) == INVALID_HANDLE_VALUE)
+        return -1; /* No files found */
+
+    do {
+        const string file_name = file_data.cFileName;
+        const string full_file_name = directory + "\\" + file_name;
+        const bool is_directory = (file_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+
+        if (file_name[0] == '.')
+            continue;
+
+        if (is_directory)
+            continue;
+
+        filenames.push_back(full_file_name);
+    } while (FindNextFile(dir, &file_data));
+
+    FindClose(dir);
+
+    std::sort (filenames.begin(), filenames.end()); //optional, sort the filenames
+    return(filenames.size()); //Return how many we found
+} // GetFilesInDirectory
+
 int main()
 {
-	String imageName("images\\input\\example2.png");
+	auto start = chrono::steady_clock::now();
+	Mat new_image_gamma_corr, new_image_auto, image_segm, new_image_without_noise;
+	/*String imageName("images\\input\\example2.png");
 	
-	Mat image, new_image_gamma_corr, new_image_auto, image_segm, new_image_without_noise;
+	
+
+//single image processing
 	image = imread(samples::findFile(imageName), IMREAD_GRAYSCALE);
 	if (image.empty())                      // Check for invalid input
 	{
@@ -402,5 +452,54 @@ int main()
 
 	
 	waitKey(0);
+	*/
+//multiple images processing form a folder
+
+
+    string folder = "images\\input";
+    cout << "Reading in directory " << folder << endl;
+    vector<string> filenames;
+
+    int num_files = readFilenames(filenames, folder);
+    cout << "Number of files = " << num_files << endl;
+	cout << "Folder: " << folder;
+    for(int i = 0; i < num_files; ++i)
+    {
+		string file =filenames[i];
+		cout << file;
+       Mat image = imread(samples::findFile(file), IMREAD_GRAYSCALE);
+		cout << image.size() << endl;
+
+        if(image.empty()) { //Protect against no file
+            cerr << folder + filenames[i] << ", file #" << i << ", is not an image" << endl;
+            continue;
+        }
+		
+		GammaCorrection(image, new_image_gamma_corr, 0.5);
+		BrightnessAndContrastAuto(new_image_gamma_corr, new_image_auto, 0);
+		//imwrite("images\\output\\example1_AutoBrightnessAndContrast.png", new_image_auto);
+		//BrightnessAndContrastAuto(new_image_gamma_corr, image_just_with_bright, 4);
+
+		//medianFilter(new_image_auto, new_image_without_noise);
+		bilateralFilter(new_image_auto, new_image_without_noise, 15, 80, 80);
+		//new_image_without_noise = bilateralFilterOwn(new_image_auto, 15, 80, 80);
+		//imwrite("images\\output\\example1_bilateralFilterOwn.png", new_image_without_noise);
+		//imwrite("images\\output\\example1Prepo.png", new_image_auto);
+		imgSeg(new_image_without_noise, image_segm);
+		//namedWindow("Display window", WINDOW_AUTOSIZE);
+	//	imshow("Display window", image_segm);
+		std::ostringstream name;
+		name << "C:\\Users\\micul\\Desktop\\Project1\\images\\output\\" << i << ".png";
+		cv::imwrite(name.str(), image_segm);
+        cv::waitKey(0); 
+    }
+
+	auto end = chrono::steady_clock::now();
+	chrono::duration<double> elapsed_seconds = end - start;
+	cout << "Proccesing time: " << elapsed_seconds.count() << "s\n";
 	return 0;
 }
+
+
+
+
